@@ -4,11 +4,12 @@ import * as Engine from './game-engine'
 type AnyState = any
 type Command = { type: string; [key: string]: unknown }
 const api = Engine as any
+const SAVE_KEY = api.SAVE_KEY || 'bawei-restaurant-save-v1'
 
 const issue = (type: string, extra: Record<string, unknown> = {}): Command => ({ type, ...extra })
 
 function safeInitial(): AnyState {
-  const saved = localStorage.getItem('bawei-save-v1')
+  const saved = localStorage.getItem(SAVE_KEY)
   if (saved && api.deserializeState) {
     try { return api.deserializeState(saved) } catch { /* fall through to a clean run */ }
   }
@@ -61,7 +62,7 @@ function App() {
   useEffect(() => {
     try {
       const value = api.serializeState ? api.serializeState(state) : JSON.stringify(api.saveState ? api.saveState(state) : state)
-      localStorage.setItem('bawei-save-v1', value)
+      localStorage.setItem(SAVE_KEY, value)
     } catch { /* localStorage is an enhancement; the run remains playable if blocked */ }
   }, [state])
 
@@ -75,6 +76,9 @@ function App() {
   const seats = runtime.seats || []
   const stoves = runtime.stoves || []
   const readyOrders = runtime.readyOrders || []
+  const guestsById = new Map((runtime.guests || []).map((guest: any) => [guest.id, guest]))
+  const ordersById = new Map((runtime.orders || []).map((order: any) => [order.id, order]))
+  const dishName = (id: string | undefined) => dishes.find((item: any) => item.id === id)?.name || id || '热菜'
   const dishes = api.getAllDishes ? api.getAllDishes() : (api.getVisibleDishes ? api.getVisibleDishes(state) : [])
   const availableUpgrade = api.getAvailableUpgrade ? api.getAvailableUpgrade(state) : null
   const activeDishes = new Set(progress.activeDishIds || [])
@@ -136,13 +140,13 @@ function App() {
               <div className="queue-list">{queue.length ? queue.map((guest: any, index: number) => <GuestCard key={guest.id || index} guest={guest} index={index} />) : <EmptyState icon="☾" text="等第一位客人" />}</div>
             </Stage>
             <Stage title="桌位区" subtitle={`${seats.filter((seat: any) => seat.status !== 'empty').length}/${seats.length || 3} 桌`} className="seat-stage">
-              <div className="seat-list">{seats.map((seat: any, index: number) => <SeatCard key={seat.id || index} seat={seat} index={index} />)}</div>
+              <div className="seat-list">{seats.map((seat: any, index: number) => <SeatCard key={seat.id || index} seat={{ ...seat, guestName: (guestsById.get(seat.guestId) as any)?.name }} index={index} />)}</div>
             </Stage>
             <Stage title="灶眼区" subtitle={`${stoves.filter((stove: any) => stove.orderId).length}/${stoves.length || 1} 开火`} className="stove-stage">
-              <div className="stove-list">{stoves.map((stove: any, index: number) => <StoveCard key={stove.id || index} stove={stove} index={index} />)}</div>
+              <div className="stove-list">{stoves.map((stove: any, index: number) => <StoveCard key={stove.id || index} stove={{ ...stove, dishName: dishName((ordersById.get(stove.orderId) as any)?.dishId) }} index={index} />)}</div>
             </Stage>
             <Stage title="待出餐" subtitle={`${readyOrders.length} 道菜`} className="ready-stage">
-              <div className="ready-list">{readyOrders.length ? readyOrders.map((order: any, index: number) => <div className="ready-order" key={order.id || index}><span className="dish-bowl">🥣</span><div><b>{order.dishName || order.dishId || '热菜'}</b><small>等待 {formatTime(order.remainingWait ?? order.waitRemaining)}</small></div></div>) : <EmptyState icon="♨" text="灶台还在忙" />}</div>
+              <div className="ready-list">{readyOrders.length ? readyOrders.map((order: any, index: number) => <div className="ready-order" key={order.id || index}><span className="dish-bowl">🥣</span><div><b>{dishName(order.dishId)}</b><small>等待 {formatTime(order.waitingRemaining)}</small></div></div>) : <EmptyState icon="♨" text="灶台还在忙" />}</div>
               <button className="primary-button serve-button" onClick={() => send(issue('SERVE'), '现在没有可以出餐的菜。')}>出餐 <span>↗</span></button>
             </Stage>
           </div>
@@ -159,11 +163,12 @@ function App() {
             <div className="tabs"><button className={activeTab === 'menu' ? 'active' : ''} onClick={() => setActiveTab('menu')}>菜单 / 研发</button><button className={activeTab === 'upgrade' ? 'active' : ''} onClick={() => setActiveTab('upgrade')}>成长</button><button className={activeTab === 'gifts' ? 'active' : ''} onClick={() => setActiveTab('gifts')}>礼物互动</button></div>
             {activeTab === 'menu' && <div className="panel-body"><div className="panel-title"><div><span className="section-kicker">厨房菜单</span><h3>选择今晚的招牌</h3></div><span className="capacity-chip">{publishedDishes.size}/{state.config?.dishCapacity ?? 3} 上架</span></div><div className="dish-grid">{dishRows.slice(0, 8).map((dish: any) => <div className={`dish-row ${dish.active && !dish.locked ? 'unlocked' : 'locked'}`} key={dish.id}><span className={`dish-dot tier-${dish.tier}`}>{dish.tier}</span><div className="dish-info"><b>{dish.name}</b><small>¥{dish.price} · {dish.cookSeconds}s {dish.locked ? '· 条件未满足' : ''}</small></div>{dish.active ? <button className={dish.published ? 'tiny-button selected' : 'tiny-button'} onClick={() => send(issue(dish.published ? 'UNPUBLISH_DISH' : 'PUBLISH_DISH', { dishId: dish.id }), dish.published ? '已从菜单撤下。' : '已端上菜单。')}>{dish.published ? '上架中' : '上架'}</button> : <button className="tiny-button research" onClick={() => send(issue('RESEARCH_DISH', { dishId: dish.id }), '研发条件不足，先攒一攒资源。')} disabled={dish.locked}>研发</button>}</div>)}</div></div>}
             {activeTab === 'upgrade' && <div className="panel-body upgrade-body"><UpgradeRow title="饭馆升级" current={`Lv.${progress.restaurantLevel ?? 1}`} detail={availableUpgrade?.restaurant?.requirement || '下一等级提升桌位、灶眼和客流'} onClick={() => send(issue('UPGRADE_RESTAURANT'), '饭馆升级条件还未满足。')} /><UpgradeRow title="厨师升级" current={`Lv.${progress.chefLevel ?? 1}`} detail={availableUpgrade?.chef?.requirement || '提升可做品级与烹饪速度'} onClick={() => send(issue('UPGRADE_CHEF'), '厨师升级条件还未满足。')} /></div>}
-            {activeTab === 'gifts' && <div className="panel-body gift-body"><GiftButton icon="🪄" title="仙女棒" sub={`已用 ${effects.wizardUses ?? 0}/4`} onClick={() => send(issue('GIFT_WAND'), '没有烹饪中的订单，仙女棒没有消耗。')} /><GiftButton icon="💊" title="能量药丸" sub={`第 ${((progress.pillDrawCount ?? 0) % 10) + 1} 抽`} onClick={() => send(issue('GIFT_PILL'), '药丸已送达厨房。')} /><GiftButton icon="🪞" title="魔法镜" sub={`${effects.mirror?.layers ?? 0}/3 层`} onClick={() => send(issue('GIFT_MIRROR'), '魔法镜最多叠 3 层。')} /><GiftButton icon="🍩" title="甜甜圈" sub={`${formatTime(effects.donutRemaining)} 自动出餐`} onClick={() => send(issue('GIFT_DONUT'), '甜甜圈效果已加入队列。')} /><GiftButton icon="💣" title="炸弹" sub={effects.bombCooldown > 0 ? `冷却 ${formatTime(effects.bombCooldown)}` : '招揽客人'} onClick={() => send(issue('GIFT_BOMB'), '当前空位不足，炸弹没有消耗。')} /></div>}
+            {activeTab === 'gifts' && <div className="panel-body gift-body"><GiftButton icon="🪄" title="仙女棒" sub={`当前订单最多 4 根`} onClick={() => send(issue('GIFT_WAND'), '没有烹饪中的订单，仙女棒没有消耗。')} /><GiftButton icon="💊" title="能量药丸" sub={`第 ${((progress.pillDrawCount ?? 0) % 10) + 1} 抽`} onClick={() => send(issue('GIFT_PILL'), '药丸已送达厨房。')} /><GiftButton icon="🪞" title="魔法镜" sub={`${effects.mirror?.layers ?? 0}/3 层`} onClick={() => send(issue('GIFT_MIRROR'), '魔法镜最多叠 3 层。')} /><GiftButton icon="🍩" title="甜甜圈" sub={`${formatTime(effects.donutRemaining)} 自动出餐`} onClick={() => send(issue('GIFT_DONUT'), '甜甜圈效果已加入队列。')} /><GiftButton icon="💣" title="炸弹" sub={effects.bombCooldown > 0 ? `冷却 ${formatTime(effects.bombCooldown)}` : '招揽客人'} onClick={() => send(issue('GIFT_BOMB'), '当前空位不足，炸弹没有消耗。')} /></div>}
           </div>
 
           <div className="control-card glass-panel debug-card"><div className="panel-title"><div><span className="section-kicker">LIVE CONTROL</span><h3>直播控制台</h3></div><span className="pulse-label"><span className="live-dot" /> 状态同步中</span></div><div className="speed-row"><span>时间倍率</span><div className="segmented">{[1, 2, 5].map((value) => <button key={value} className={speed === value ? 'active' : ''} onClick={() => send(issue('SET_SPEED', { speed: value }))}>{value}×</button>)}</div><button className="pause-button" onClick={() => send(issue(state.clock?.paused ? 'RESUME' : 'PAUSE'))}>{state.clock?.paused ? '继续' : '暂停'}</button></div><div className="command-box"><span className="command-icon">▸</span><input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleInput(command) }} placeholder="输入弹幕指令，例如：出餐" /><button onClick={() => handleInput(command)}>发送</button></div><div className="notice-line">{notice || '观众正在等待你的下一条操作…'}</div><div className="log-list">{logs.map((log: any, index: number) => <div className="log-row" key={`${log.tick}-${index}`}><span className="log-time">{formatTime(log.tick)}</span><span>{log.message || log.text}</span></div>)}</div></div>
         </section>
+        <section className="gift-rail glass-panel"><div className="gift-rail-copy"><span className="section-kicker">观众礼物</span><b>把热度送进厨房</b></div><div className="gift-rail-buttons"><QuickGift icon="💗" label="心动" onClick={() => send(issue('GIFT_MIRROR'))} /><QuickGift icon="⏱" label="加速" onClick={() => send(issue('GIFT_DONUT'))} /><QuickGift icon="👨‍🍳" label="上菜" onClick={() => send(issue('SERVE'))} /><QuickGift icon="🔥" label="仙女棒" onClick={() => send(issue('GIFT_WAND'))} /><QuickGift icon="❄" label="炸弹" onClick={() => send(issue('GIFT_BOMB'))} /></div><div className="viewer-strip"><span className="viewer-avatar">👤</span><span className="viewer-avatar">🐼</span><span className="viewer-avatar">🌸</span><small>3,126 位观众正在围观</small></div></section>
         <footer><span>SVG / 占位图视觉冻结 · 规则来自 H5 实现方案 v1</span><span>本地模拟事件 · 无真实平台接入</span></footer>
       </section>
     </main>
@@ -178,5 +183,6 @@ function SeatCard({ seat, index }: { seat: any; index: number }) { const occupie
 function StoveCard({ stove, index }: { stove: any; index: number }) { const active = Boolean(stove.orderId); const percent = active ? Math.max(0, Math.min(100, (1 - ((stove.remainingSeconds ?? stove.remaining ?? 0) / Math.max(1, stove.totalSeconds ?? stove.total ?? 1))) * 100)) : 0; return <div className={`stove-card ${active ? 'cooking' : ''}`}><span className="stove-icon">{active ? '🔥' : '♨'}</span><div className="stove-info"><b>{active ? (stove.dishName || stove.orderId) : `灶眼 ${index + 1}`}</b><div className="progress"><i style={{ width: `${percent}%` }} /></div><small>{active ? formatTime(stove.remainingSeconds ?? stove.remaining) : '空闲'}</small></div></div> }
 function UpgradeRow({ title, current, detail, onClick }: { title: string; current: string; detail: string; onClick: () => void }) { return <div className="upgrade-row"><div className="upgrade-icon">↗</div><div><span>{title}</span><b>{current}</b><small>{detail}</small></div><button className="tiny-button" onClick={onClick}>升级</button></div> }
 function GiftButton({ icon, title, sub, onClick }: { icon: string; title: string; sub: string; onClick: () => void }) { return <button className="gift-button" onClick={onClick}><span className="gift-icon">{icon}</span><span><b>{title}</b><small>{sub}</small></span><em>+</em></button> }
+function QuickGift({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) { return <button className="quick-gift" onClick={onClick}><span>{icon}</span><small>{label}</small></button> }
 
 export default App

@@ -8,3 +8,5 @@ dist/
 .tmp_*.py
 doc_extract.txt
 *.tsbuildinfo
+.playwright-cli/
+output/playwright/

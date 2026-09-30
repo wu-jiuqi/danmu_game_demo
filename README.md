@@ -30,13 +30,15 @@ npm test
 - 红色仙女棒、能量药丸、魔法镜、甜甜圈、炸弹五种礼物的上限、冷却、容量和保底规则。
 - 饭馆/厨师升级、12 道菜的数据配置、上架/下架与厨师品级锁定。
 - `localStorage` 版本化保存现金、材料、等级和已激活菜品；刷新时在线客人和订单重建。
+- 11 个 Vitest 用例覆盖核心闭环、容量、超时、研发上架、礼物上限、药丸保底和坏存档清理。
 - 模拟弹幕指令：`出餐`、`暂停`、`1倍`、`2倍`、`5倍`、`排1`、`排2`、`排3`。
 
 ## 目录
 
 ```text
-src/game-engine.ts       # GameState、配置、dispatch、tick、礼物和存档
-src/game-engine.test.ts  # 核心闭环、礼物上限、存档测试
+src/game-engine.ts       # GameState、dispatch、tick、礼物和存档
+src/game-data/index.ts   # 饭馆、厨师、菜品、客人、礼物和药丸配置
+src/game-engine.test.ts  # 11 个核心闭环与边界测试
 src/App.tsx              # 页面布局与交互面板
 src/styles.css           # 9:16 夜市风格占位视觉
 public/visuals/          # SVG 夜景占位背景
