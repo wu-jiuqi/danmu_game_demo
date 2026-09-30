@@ -49,6 +49,8 @@ export type Stove = {
   status: StoveStatus;
   orderId?: string;
   remaining: number;
+  remainingSeconds?: number;
+  totalSeconds?: number;
 };
 
 export type Order = {
@@ -60,6 +62,8 @@ export type Order = {
   baseSeconds: number;
   remaining: number;
   waitingRemaining: number;
+  remainingWait?: number;
+  waitRemaining?: number;
   diningRemaining: number;
   stoveId?: string;
   servedAtTick?: number;
@@ -313,7 +317,7 @@ function findOrder(state: GameState, id: string): Order | undefined {
 export function createInitialState(options: CreateStateOptions = {}): GameState {
   const cfg = restaurant(1);
   const seats = Array.from({ length: cfg.seats }, (_, index) => ({ id: `seat-${index + 1}`, status: "empty" as SeatStatus }));
-  const stoves = Array.from({ length: cfg.stoves }, (_, index) => ({ id: `stove-${index + 1}`, status: "idle" as StoveStatus, remaining: 0 }));
+  const stoves = Array.from({ length: cfg.stoves }, (_, index) => ({ id: `stove-${index + 1}`, status: "idle" as StoveStatus, remaining: 0, remainingSeconds: 0, totalSeconds: 0 }));
   return {
     version: 1, configVersion: CONFIG_VERSION,
     clock: { tick: 0, paused: false, speed: 1 },
@@ -335,7 +339,7 @@ function removeOrder(state: GameState, orderId: string): void {
   if (index >= 0) orders.splice(index, 1);
   const readyIndex = state.runtime.readyOrders.findIndex((order) => order.id === orderId);
   if (readyIndex >= 0) state.runtime.readyOrders.splice(readyIndex, 1);
-  for (const stove of state.runtime.stoves) if (stove.orderId === orderId) { stove.status = "idle"; stove.orderId = undefined; stove.remaining = 0; }
+  for (const stove of state.runtime.stoves) if (stove.orderId === orderId) { stove.status = "idle"; stove.orderId = undefined; stove.remaining = 0; stove.remainingSeconds = 0; stove.totalSeconds = 0; }
 }
 
 function clearGuestSeat(state: GameState, guestId: string): void {
@@ -374,7 +378,7 @@ function assignStoves(state: GameState): void {
     const stove = freeStove(state);
     if (!stove) break;
     stove.status = "cooking"; stove.orderId = order.id;
-    stove.remaining = order.remaining; order.stoveId = stove.id; order.status = "cooking";
+    stove.remaining = order.remaining; stove.remainingSeconds = order.remaining; stove.totalSeconds = order.baseSeconds; order.stoveId = stove.id; order.status = "cooking";
   }
 }
 
@@ -383,12 +387,12 @@ function finishCooking(state: GameState): void {
     if (stove.status !== "cooking" || !stove.orderId) continue;
     const order = runtimeOrders(state).find((item) => item.id === stove.orderId);
     if (!order || order.status !== "cooking") continue;
-    order.remaining = stove.remaining;
+    order.remaining = stove.remaining; stove.remainingSeconds = stove.remaining;
     if (order.remaining > 0) continue;
     const guest = findGuest(state, order.guestId);
-    order.status = "ready"; order.waitingRemaining = guest?.kind ? (GUESTS.find((item) => item.kind === guest.kind)?.readyWait ?? 10) : 10;
+    order.status = "ready"; order.waitingRemaining = guest?.kind ? (GUESTS.find((item) => item.kind === guest.kind)?.readyWait ?? 10) : 10; order.remainingWait = order.waitingRemaining; order.waitRemaining = order.waitingRemaining;
     state.runtime.readyOrders.push(order);
-    stove.status = "idle"; stove.orderId = undefined; stove.remaining = 0;
+    stove.status = "idle"; stove.orderId = undefined; stove.remaining = 0; stove.remainingSeconds = 0; stove.totalSeconds = 0;
     if (state.effects.wizardOrderId === order.id) { state.effects.wizardOrderId = undefined; state.effects.wizardUses = 0; }
     addLog(state, `${dish(order.dishId)?.name ?? order.dishId} 做好了，等待出餐`, "ready");
     if (state.effects.donutRemaining > 0) serveOrder(state, order);
@@ -448,7 +452,7 @@ function expireEntities(state: GameState): void {
   }
   for (const order of [...runtimeOrders(state)]) {
     if (order.status !== "ready") continue;
-    order.waitingRemaining -= 1;
+    order.waitingRemaining -= 1; order.remainingWait = order.waitingRemaining; order.waitRemaining = order.waitingRemaining;
     if (order.waitingRemaining > 0) continue;
     order.status = "cancelled"; clearGuestSeat(state, order.guestId);
     addLog(state, "待出餐超时，订单作废", "leave"); removeOrder(state, order.id);
@@ -481,7 +485,7 @@ function tickOne(state: GameState): void {
   assignStoves(state);
   for (const stove of state.runtime.stoves) if (stove.status === "cooking" && stove.orderId) {
     const order = runtimeOrders(state).find((item) => item.id === stove.orderId);
-    if (order?.status === "cooking") { stove.remaining = Math.max(0, stove.remaining - chef(state.progress.chefLevel).speed); order.remaining = stove.remaining; }
+    if (order?.status === "cooking") { stove.remaining = Math.max(0, stove.remaining - chef(state.progress.chefLevel).speed); stove.remainingSeconds = stove.remaining; order.remaining = stove.remaining; }
   }
   finishCooking(state);
   if (state.effects.donutRemaining > 0) {
@@ -512,7 +516,7 @@ function spend(resources: ResourceBag, cost: Partial<ResourceBag>): void {
 function resizeRuntime(state: GameState): void {
   const cfg = restaurant(state.progress.restaurantLevel);
   while (state.runtime.seats.length < cfg.seats) state.runtime.seats.push({ id: `seat-${state.runtime.seats.length + 1}`, status: "empty" });
-  while (state.runtime.stoves.length < cfg.stoves) state.runtime.stoves.push({ id: `stove-${state.runtime.stoves.length + 1}`, status: "idle", remaining: 0 });
+  while (state.runtime.stoves.length < cfg.stoves) state.runtime.stoves.push({ id: `stove-${state.runtime.stoves.length + 1}`, status: "idle", remaining: 0, remainingSeconds: 0, totalSeconds: 0 });
 }
 function publishDish(state: GameState, id: string): boolean {
   if (!state.progress.activeDishIds.includes(id)) return false;
@@ -573,7 +577,7 @@ function redWand(state: GameState): boolean {
   if (!order || order.status !== "cooking") return false;
   if (state.effects.wizardOrderId !== order.id) { state.effects.wizardOrderId = order.id; state.effects.wizardUses = 0; }
   if (state.effects.wizardUses >= 4) return false;
-  order.remaining = Math.max(order.baseSeconds * 0.2, order.remaining - order.baseSeconds * 0.2); stove.remaining = order.remaining;
+  order.remaining = Math.max(order.baseSeconds * 0.2, order.remaining - order.baseSeconds * 0.2); stove.remaining = order.remaining; stove.remainingSeconds = order.remaining;
   state.effects.wizardUses += 1; addLog(state, "红色仙女棒缩短烹饪时间", "gift"); return true;
 }
 function mirrorGift(state: GameState): boolean {
@@ -645,8 +649,11 @@ export function dispatch(input: GameState, command: Command | string): GameState
 }
 
 export function getVisibleDishes(state: GameState): Dish[] {
-  return state.progress.activeDishIds.map((id) => dish(id)).filter((item): item is Dish => Boolean(item));
+  // The menu panel needs locked entries in order to show their research cost.
+  // Whether an entry is active/published/cookable is derived by the caller.
+  return DISHES.slice();
 }
+export function getCookableDishes(state: GameState): Dish[] { return activeDishes(state); }
 
 export function getAllDishes(): Dish[] { return [...DISHES]; }
 export function getAvailableUpgrade(state: GameState): {
@@ -699,10 +706,12 @@ export function deserializeState(serialized: string | null | undefined): GameSta
 export type StorageLike = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 export function saveState(state: GameState, storage?: StorageLike): string {
   const serialized = serializeState(state);
-  if (storage) storage.setItem(SAVE_KEY, serialized);
+  const target = storage ?? (typeof globalThis !== "undefined" ? (globalThis as typeof globalThis & { localStorage?: StorageLike }).localStorage : undefined);
+  if (target) target.setItem(SAVE_KEY, serialized);
   return serialized;
 }
 export function loadState(source?: StorageLike | string | PersistedState): GameState {
+  if (!source && typeof globalThis !== "undefined") source = (globalThis as typeof globalThis & { localStorage?: StorageLike }).localStorage;
   if (!source) return createInitialState();
   if (typeof source === "string") return deserializeState(source);
   if (typeof (source as StorageLike).getItem === "function") return deserializeState((source as StorageLike).getItem(SAVE_KEY));
