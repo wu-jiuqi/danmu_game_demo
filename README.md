@@ -1,6 +1,6 @@
 # 百味饭馆 · 弹幕经营 H5 Demo
 
-这是按照 `docs/百味饭馆_H5实现方案_v1.md` 搭建的离线浏览器 Demo。技术栈为 React + TypeScript + Vite，页面基准为 9:16 竖屏构图；视觉暂时冻结为概念图的布局和色彩方向，界面使用 CSS、Emoji 与 SVG 占位图完成，不接真实直播平台。
+这是按照 `docs/百味饭馆_H5实现方案_v1.md` 与 Figma 原型搭建的离线浏览器 Demo。技术栈为 React + TypeScript + Vite，页面基准为 1440 × 900 桌面经营界面；界面使用 CSS 与 Emoji 占位图完成，不接真实直播平台。
 
 ## 启动
 
@@ -40,7 +40,7 @@ src/game-engine.ts       # GameState、dispatch、tick、礼物和存档
 src/game-data/index.ts   # 饭馆、厨师、菜品、客人、礼物和药丸配置
 src/game-engine.test.ts  # 11 个核心闭环与边界测试
 src/App.tsx              # 页面布局与交互面板
-src/styles.css           # 9:16 夜市风格占位视觉
+src/styles.css           # 1440×900 夜市经营视觉与响应式滚动
 public/visuals/          # SVG 夜景占位背景
 docs/                    # 原始 H5 方案和面试作业要求
 assets/concept/          # 冻结的概念图，仅作为视觉标准参考
