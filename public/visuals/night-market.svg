@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 941 1672" role="img" aria-label="夜色中的中式灯笼小馆占位背景">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#0d1731"/><stop offset="0.58" stop-color="#1e2445"/><stop offset="1" stop-color="#5f3040"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3b2030"/><stop offset="1" stop-color="#130f20"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="11" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="941" height="1672" fill="url(#sky)"/>
+  <circle cx="740" cy="250" r="155" fill="#ffd7a1" opacity=".12"/>
+  <path d="M0 430 Q240 350 470 430 T941 405 V610 H0Z" fill="#0b1128" opacity=".88"/>
+  <path d="M0 510 Q220 400 455 515 T941 480 V725 H0Z" fill="#222044"/>
+  <path d="M0 610 Q230 510 470 625 T941 585 V840 H0Z" fill="url(#wood)"/>
+  <path d="M0 770 H941 V1672 H0Z" fill="#191326"/>
+  <g fill="#ff9f55" filter="url(#glow)" opacity=".88">
+    <ellipse cx="94" cy="330" rx="22" ry="38"/><ellipse cx="846" cy="330" rx="22" ry="38"/>
+    <ellipse cx="56" cy="700" rx="20" ry="34"/><ellipse cx="890" cy="690" rx="20" ry="34"/>
+    <ellipse cx="120" cy="1070" rx="18" ry="30"/><ellipse cx="820" cy="1040" rx="18" ry="30"/>
+  </g>
+  <g fill="none" stroke="#765173" stroke-width="8" opacity=".5">
+    <path d="M0 770 Q235 690 470 770 T941 750"/><path d="M0 1140 Q240 1060 470 1145 T941 1125"/>
+  </g>
+  <g fill="#2d2444" opacity=".8"><path d="M0 1440 l90-120 55 100 70-150 80 170 80-120 90 120 90-155 80 140 80-100 75 115 60-110 90 130 75-100 75 115 80-150 75 145v207H0Z"/></g>
+</svg>
