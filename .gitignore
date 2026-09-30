@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.vite/
+.godot/
+.idea/
+.DS_Store
+*.local
+.tmp_*.py
+doc_extract.txt
+*.tsbuildinfo
