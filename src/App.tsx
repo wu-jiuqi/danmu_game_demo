@@ -115,6 +115,7 @@ function App() {
   return (
     <main className="app-shell">
       <div className="atmosphere" aria-hidden="true" />
+      <div className="phone-shell">
       <section className="game-frame">
         <header className="topbar glass-panel">
           <div className="brand"><span className="brand-mark">味</span><div><b>百味饭馆</b><small>弹幕经营实验场</small></div></div>
@@ -171,6 +172,7 @@ function App() {
         <section className="gift-rail glass-panel"><div className="gift-rail-copy"><span className="section-kicker">观众礼物</span><b>把热度送进厨房</b></div><div className="gift-rail-buttons"><QuickGift icon="💗" label="心动" onClick={() => send(issue('GIFT_MIRROR'))} /><QuickGift icon="⏱" label="加速" onClick={() => send(issue('GIFT_DONUT'))} /><QuickGift icon="👨‍🍳" label="上菜" onClick={() => send(issue('SERVE'))} /><QuickGift icon="🔥" label="仙女棒" onClick={() => send(issue('GIFT_WAND'))} /><QuickGift icon="❄" label="炸弹" onClick={() => send(issue('GIFT_BOMB'))} /></div><div className="viewer-strip"><span className="viewer-avatar">👤</span><span className="viewer-avatar">🐼</span><span className="viewer-avatar">🌸</span><small>3,126 位观众正在围观</small></div></section>
         <footer><span>SVG / 占位图视觉冻结 · 规则来自 H5 实现方案 v1</span><span>本地模拟事件 · 无真实平台接入</span></footer>
       </section>
+      </div>
     </main>
   )
 }
