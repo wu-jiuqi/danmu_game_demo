@@ -83,23 +83,32 @@ function App() {
   const availableUpgrade = api.getAvailableUpgrade ? api.getAvailableUpgrade(state) : undefined
   const publishedDishes = new Set(progress.publishedDishIds || [])
   const activeDishes = new Set(progress.activeDishIds || [])
-  const dishCapacity = api.RESTAURANTS?.[(progress.restaurantLevel || 1) - 1]?.dishSlots ?? 3
+  const currentRestaurant = api.RESTAURANTS?.[(progress.restaurantLevel || 1) - 1] || { seats: 3, stoves: 1, dishSlots: 3 }
+  const dishCapacity = currentRestaurant.dishSlots ?? 3
+  const seatCapacity = currentRestaurant.seats ?? 3
+  const stoveCapacity = currentRestaurant.stoves ?? 1
 
   const dishName = useCallback((id: string | undefined) => PROTOTYPE_DISH_NAMES[id || ''] || dishes.find((item: any) => item.id === id)?.name || id || '热菜', [dishes])
 
-  const recipeRows = useMemo(() => ['D0101', 'D0102', 'D0104', 'D0103'].map((id, index) => {
-    const dish = dishes.find((item: any) => item.id === id)
+  const recipeRows = useMemo(() => dishes.map((dish: any) => {
+    const id = dish.id
     const active = activeDishes.has(id)
     const published = publishedDishes.has(id)
     const researchAffordable = Boolean(dish) && Object.entries(dish.research || {}).every(([key, value]) => (resources[key] ?? 0) >= Number(value))
-    const locked = !active && (!dish || dish.tier > (progress.restaurantLevel || 1) || dish.tier > (progress.chefLevel || 1) || !researchAffordable)
+    const restaurantLocked = !dish || dish.tier > (progress.restaurantLevel || 1)
+    const chefLocked = !dish || dish.tier > (progress.chefLevel || 1)
+    const locked = !active && (restaurantLocked || chefLocked || !researchAffordable)
+    const cookLocked = active && chefLocked
     const publishedIndex = [...publishedDishes].indexOf(id)
-    const subtitle = active && published
+    const lockReason = restaurantLocked ? `饭馆 Lv.${dish?.tier || 2} 解锁` : chefLocked ? `厨师 Lv.${dish?.tier || 2} 解锁` : !researchAffordable ? `研发 ${Object.entries(dish?.research || {}).map(([key, value]) => `${key}${value}`).join(' ') || '免费'}` : ''
+    const subtitle = cookLocked
+      ? `厨师 Lv.${dish?.tier || 2} 解锁 · 暂不可烹饪`
+      : active && published
       ? `上架位 ${publishedIndex + 1} / ${dishCapacity} · 可点单`
-      : active ? '已激活 · 等待上架位' : `需要饭馆 Lv.${dish?.tier || 2} · 缺 ${dish?.research?.cash || 0} 现金`
-    const status = active && published ? '已上架 · 可点单' : active ? '已激活 · 未上架' : '未激活 · 可研发'
-    const action = active ? (published ? '下架 / 调整顺序' : '上架') : '研发'
-    return { id, dish, name: PROTOTYPE_DISH_NAMES[id] || dish?.name || '热菜', active, published, locked, subtitle, status, action }
+      : active ? '已激活 · 等待上架位' : lockReason
+    const status = cookLocked ? '厨师锁定' : active && published ? '已上架' : active ? '已激活' : locked ? '已锁定' : '可研发'
+    const action = active ? (published ? '下架' : '上架') : '研发'
+    return { id, dish, name: PROTOTYPE_DISH_NAMES[id] || dish?.name || '热菜', active, published, locked: locked || cookLocked, subtitle, status, action }
   }), [activeDishes, dishCapacity, dishes, progress.chefLevel, progress.restaurantLevel, publishedDishes, resources])
 
   const latestLog = stats.logs?.[stats.logs.length - 1]
@@ -110,9 +119,25 @@ function App() {
     const idleIndex = result.findIndex((stove: any) => stove.status === 'idle')
     if (readyOrder && idleIndex >= 0) result[idleIndex] = { id: 'ready-order-stove', status: 'ready', orderId: readyOrder.id, remaining: readyOrder.waitingRemaining }
     else if (readyOrder) result.push({ id: 'ready-order-stove', status: 'ready', orderId: readyOrder.id, remaining: readyOrder.waitingRemaining })
-    while (result.length < 2) result.push({ id: `empty-stove-${result.length + 1}`, status: 'idle', remaining: 0 })
-    return result.slice(0, 2)
-  }, [readyOrders, stoves])
+    while (result.length < stoveCapacity) result.push({ id: `empty-stove-${result.length + 1}`, status: 'idle', remaining: 0 })
+    return result.slice(0, stoveCapacity)
+  }, [readyOrders, stoveCapacity, stoves])
+
+  const readyPreview = readyOrders.slice(0, 3)
+  const cookingOrder = stoves.map((stove: any) => ordersById.get(stove.orderId)).find((order: any) => order?.status === 'cooking')
+  const nextRestaurant = availableUpgrade?.restaurant
+  const nextChef = availableUpgrade?.chef
+  const upgradeRestaurantConfig = nextRestaurant ? api.RESTAURANTS?.[nextRestaurant.level - 1] : undefined
+  const upgradeChefConfig = nextChef ? api.CHEFS?.[nextChef.level - 1] : undefined
+
+  const upgradeSummary = (kind: 'restaurant' | 'chef', info: any, config: any) => {
+    if (!info || !config) return `${kind === 'restaurant' ? '饭馆' : '厨师'}已满级`
+    const resourceLabel = (key: string) => key === 'cash' ? '现金' : key === 'badges' ? '铭牌' : key === 'red' ? '红食材' : key === 'green' ? '绿食材' : key === 'blue' ? '蓝食材' : key
+    const cost = Object.entries(info.cost || {}).map(([key, value]) => `${resourceLabel(key)}${value}`).join(' · ')
+    const gap = Object.entries(info.cost || {}).map(([key, value]) => [resourceLabel(key), Math.max(0, Number(value) - Number(resources[key] || 0))] as const).filter(([, value]) => value > 0).map(([key, value]) => `${key}${value}`).join('、')
+    const effect = kind === 'restaurant' ? `桌位 ${config.seats} · 排队 ${config.queue} · 灶眼 ${config.stoves} · 菜位 ${config.dishSlots}` : `烹饪速度 ×${config.speed} · 可用 ${config.maxTier} 级菜`
+    return `${cost || '无消耗'} · ${info.requirement} · ${effect}${gap ? ` · 还差 ${gap}` : info.affordable ? ' · 可升级' : ''}`
+  }
 
   const handleInput = (value: string) => {
     const trimmed = value.trim()
@@ -138,26 +163,27 @@ function App() {
           <div className="brand-lockup"><strong>百味饭馆</strong><span>24H 夜市经营</span></div>
           <button className="level-badge restaurant-level" onClick={() => send(issue('UPGRADE_RESTAURANT'), '饭馆升级条件还未满足。')}><strong>饭馆 Lv.{progress.restaurantLevel ?? 1}</strong><span>{availableUpgrade?.restaurant?.affordable ? '可升级' : '稳定经营'}</span></button>
           <button className="level-badge chef-level" onClick={() => send(issue('UPGRADE_CHEF'), '厨师升级条件还未满足。')}><strong>厨师 Lv.{progress.chefLevel ?? 1}</strong><span>炉火稳定</span></button>
-          <div className="resource-row"><ResourceBadge label="现金" value={resources.cash ?? 0} icon="$" tone="gold" /><ResourceBadge label="红食材" value={resources.red ?? 0} icon="R" tone="red" /><ResourceBadge label="绿食材" value={resources.green ?? 0} icon="G" tone="green" /><ResourceBadge label="蓝食材" value={resources.blue ?? 0} icon="B" tone="cyan" /><ResourceBadge label="今日客流" value={stats.todayGuests ?? 0} icon="♥" tone="pink" /><ResourceBadge label="营业额" value={`¥${stats.todayRevenue ?? 0}`} icon="↗" tone="cream" /></div>
+          <div className="resource-row"><ResourceBadge label="现金" value={resources.cash ?? 0} icon="$" tone="gold" /><ResourceBadge label="红食材" value={resources.red ?? 0} icon="R" tone="red" /><ResourceBadge label="绿食材" value={resources.green ?? 0} icon="G" tone="green" /><ResourceBadge label="蓝食材" value={resources.blue ?? 0} icon="B" tone="cyan" /><ResourceBadge label="铭牌碎片" value={resources.badges ?? 0} icon="✦" tone="violet" /><ResourceBadge label="今日客流" value={stats.todayGuests ?? 0} icon="♥" tone="pink" /><ResourceBadge label="营业额" value={`¥${stats.todayRevenue ?? 0}`} icon="↗" tone="cream" /></div>
         </header>
 
         <div className="workspace-grid">
-          <aside className="recipe-panel panel-surface"><PanelHeading title="菜单与升级" subtitle="研发、上架与缺口" /><div className="recipe-list">{recipeRows.map((recipe: any) => <RecipeStateCard key={recipe.id} recipe={recipe} onAction={(commandType: string) => send(issue(commandType, { dishId: recipe.id }), recipe.action === '上架' ? '已端上菜单。' : '已更新菜单状态。')} />)}</div></aside>
+          <aside className="recipe-panel panel-surface"><PanelHeading title="菜单与升级" subtitle={`${recipeRows.length} 道菜 · 研发 / 上架 / 锁定`} /><div className="recipe-list">{recipeRows.map((recipe: any) => <RecipeStateCard key={recipe.id} recipe={recipe} onAction={(commandType: string) => send(issue(commandType, { dishId: recipe.id }), recipe.action === '上架' ? '已端上菜单。' : '已更新菜单状态。')} />)}</div><div className="upgrade-summary"><strong>升级信息</strong><span>饭馆 Lv.{nextRestaurant?.level ?? 'MAX'} · {upgradeSummary('restaurant', nextRestaurant, upgradeRestaurantConfig)}</span><span>厨师 Lv.{nextChef?.level ?? 'MAX'} · {upgradeSummary('chef', nextChef, upgradeChefConfig)}</span></div></aside>
 
           <section className="main-stage panel-surface">
             <PanelHeading title="经营舞台" subtitle={`夜市 23:48 · Tick ${state.clock?.paused ? '暂停' : '进行中'}`} action={<span className="stage-chip">主舞台可见</span>} />
             <div className="lantern-row" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <i key={index} />)}</div>
             <div className="queue-strip"><div className="queue-label"><strong>排队区</strong><span>{queue.length} 位客人</span></div><div className="queue-avatars">{queue.slice(0, 3).map((guest: any, index: number) => <QueueAvatar key={guest.id || index} guest={guest} index={index} />)}{queue.length === 0 && <span className="queue-empty">等待第一位客人</span>}</div><div className="order-bubble"><strong>{queue[0] ? `已下单：${dishName(queue[0].orderId ? ordersById.get(queue[0].orderId)?.dishId : [...publishedDishes][0] || progress.activeDishIds?.[0])}` : '等待下一笔订单'}</strong><span>{queue[0] ? `排队中 ${secondsLabel(queue[0].patienceRemaining)}` : '排队中 --'}</span><ProgressBar value={queue[0] ? Math.max(0.08, Math.min(1, (queue[0].patienceRemaining || 0) / Math.max(1, queue[0].patience || 1))) : 0.12} tone="queue" /></div></div>
             <h3 className="stage-section-title">桌台与客人状态</h3>
-            <div className="table-row">{(seats.length ? seats : [{ id: 'seat-1', status: 'empty' }, { id: 'seat-2', status: 'empty' }, { id: 'seat-3', status: 'empty' }]).slice(0, 3).map((seat: any, index: number) => <TableCard key={seat.id || index} seat={seat} index={index} guest={guestsById.get(seat.guestId)} order={ordersById.get(seat.orderId)} dishName={dishName} />)}</div>
-            <div className="chef-station"><div className="chef-copy"><div className="chef-avatar">厨</div><div><strong>厨师与灶眼</strong><span>阿灶师傅 · Lv.{progress.chefLevel ?? 1}</span><small>烹饪规则来自状态机</small></div></div><div className="burner-row">{visibleStoves.map((stove: any, index: number) => <BurnerCard key={stove.id || index} stove={stove} index={index} order={ordersById.get(stove.orderId)} dishName={dishName} onServe={() => send(issue('SERVE'), '现在没有可以出餐的菜。')} />)}</div></div>
+            <div className="table-row">{(seats.length ? seats : Array.from({ length: seatCapacity }, (_, index) => ({ id: `seat-${index + 1}`, status: 'empty' }))).slice(0, seatCapacity).map((seat: any, index: number) => <TableCard key={seat.id || index} seat={seat} index={index} guest={guestsById.get(seat.guestId)} order={ordersById.get(seat.orderId)} dishName={dishName} />)}</div>
+            <div className="ready-orders-panel"><div><strong>待出餐</strong><span>{readyOrders.length} 份 · 超时将离开且不结算</span></div><div className="ready-order-list">{readyPreview.length ? readyPreview.map((order: any) => <button key={order.id} onClick={() => send(issue('SERVE', { orderId: order.id }), '已尝试出餐。')}><span>{dishName(order.dishId)}</span><b>{secondsLabel(order.waitingRemaining)}</b></button>) : <small>暂无待出餐订单</small>}</div></div>
+            <div className="chef-station"><div className="chef-copy"><div className="chef-avatar">厨</div><div><strong>厨师与灶眼</strong><span>阿灶师傅 · Lv.{progress.chefLevel ?? 1}</span><small>灶眼 {stoveCapacity} 个 · 烹饪规则来自状态机</small></div></div><div className="burner-row">{visibleStoves.map((stove: any, index: number) => <BurnerCard key={stove.id || index} stove={stove} index={index} order={ordersById.get(stove.orderId)} dishName={dishName} onServe={() => send(issue('SERVE'), '现在没有可以出餐的菜。')} />)}</div></div>
             {latestLog?.kind === 'checkout' && <div className="reward-toast">+18 现金 · 结账成功</div>}
           </section>
 
-          <aside className="gift-panel panel-surface"><PanelHeading title="礼物技能" subtitle="高饱和反馈 · 冷却独立" /><div className="skill-list"><SkillTile title="红色仙女棒" description="时间缩短 · 叠加 2/4" meta={effects.wizardCooldown > 0 ? `冷却 ${secondsLabel(effects.wizardCooldown)}` : '可使用'} tone="pink" glyph="P" onClick={() => send(issue('GIFT_WAND'), '没有烹饪中的订单，仙女棒没有消耗。')} /><SkillTile title="能量药丸" description="随机奖励 · 保底" meta={`第 ${((progress.pillDrawCount ?? 0) % 10) + 1} 抽`} tone="cyan" glyph="E" onClick={() => send(issue('GIFT_PILL'), '药丸已送达厨房。')} /><SkillTile title="魔法镜" description={`客流倍率 · 层数 ${effects.mirror?.layers ?? 0}/3`} meta={effects.mirror?.remaining ? `剩余 ${secondsLabel(effects.mirror.remaining)}` : '可使用'} tone="violet" glyph="M" onClick={() => send(issue('GIFT_MIRROR'), '魔法镜最多叠 3 层。')} /><SkillTile title="甜甜圈" description="自动出餐 · 180s 上限" meta={effects.donutRemaining ? `剩余 ${secondsLabel(effects.donutRemaining)}` : '可使用'} tone="green" glyph="D" onClick={() => send(issue('GIFT_DONUT'), '甜甜圈效果已加入队列。')} /><SkillTile title="炸弹" description="一次性招客 · 需空位" meta={effects.bombCooldown ? `冷却 ${secondsLabel(effects.bombCooldown)}` : '可使用'} tone="orange" glyph="B" onClick={() => send(issue('GIFT_BOMB'), '当前空位不足或炸弹仍在冷却。')} /></div></aside>
+          <aside className="gift-panel panel-surface"><PanelHeading title="礼物技能" subtitle="五种礼物 · 冷却 / 层数 / 持续时间" /><div className="skill-list"><SkillTile title="红色仙女棒" description={`时间缩短 · ${cookingOrder?.wandUses ?? 0}/4 根`} meta={effects.wizardCooldown > 0 ? `冷却 ${secondsLabel(effects.wizardCooldown)}` : '可使用'} tone="pink" glyph="P" onClick={() => send(issue('GIFT_WAND'), '没有烹饪中的订单，仙女棒没有消耗。')} /><SkillTile title="能量药丸" description="随机奖励 · 10 抽保底" meta={`第 ${((progress.pillDrawCount ?? 0) % 10) + 1} 抽`} tone="cyan" glyph="E" onClick={() => send(issue('GIFT_PILL'), '药丸已送达厨房。')} /><SkillTile title="魔法镜" description={`客流倍率 · 层数 ${effects.mirror?.layers ?? 0}/3`} meta={effects.mirror?.remaining ? `剩余 ${secondsLabel(effects.mirror.remaining)}` : '持续 30s · 可使用'} tone="violet" glyph="M" onClick={() => send(issue('GIFT_MIRROR'), '魔法镜最多叠 3 层。')} /><SkillTile title="甜甜圈" description="自动出餐 · 单次 60s" meta={effects.donutRemaining ? `剩余 ${secondsLabel(effects.donutRemaining)} / 180s` : '最多储存 180s'} tone="green" glyph="D" onClick={() => send(issue('GIFT_DONUT'), '甜甜圈效果已加入队列。')} /><SkillTile title="炸弹" description={`一次性招客 · 至少 3 个空位`} meta={effects.bombCooldown ? `冷却 ${secondsLabel(effects.bombCooldown)}` : '可使用'} tone="orange" glyph="B" onClick={() => send(issue('GIFT_BOMB'), '当前空位不足或炸弹仍在冷却。')} /></div></aside>
         </div>
 
-        <footer className="chat-feed"><div className="feed-title"><strong>弹幕日志</strong><span>状态变化会被记录，不绕过规则</span></div><div className="feed-logs">{displayLogs.map((log: any, index: number) => <LogCard key={`${log.id || log.tick}-${index}`} log={log} />)}</div><div className="command-bar"><input aria-label="模拟出餐指令" placeholder="输入框（原型占位）：模拟“出餐”" value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleInput(command) }} /><button onClick={() => command.trim() ? handleInput(command) : send(issue('SERVE'), '当前没有可以出餐的菜。')}>模拟出餐</button></div><div className="a11y-note"><span>可访问性</span><strong>高对比 · 减少动效</strong></div><span className="sr-only" aria-live="polite">{notice}</span></footer>
+        <footer className="chat-feed"><div className="feed-title"><strong>弹幕日志</strong><span>状态变化会被记录，不绕过规则</span></div><div className="feed-logs">{displayLogs.map((log: any, index: number) => <LogCard key={`${log.id || log.tick}-${index}`} log={log} />)}</div><div className="command-bar"><input aria-label="模拟出餐指令" placeholder="输入框（原型占位）：出餐 / 排1 / 暂停" value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleInput(command) }} /><button onClick={() => command.trim() ? handleInput(command) : send(issue('SERVE'), '当前没有可以出餐的菜。')}>模拟出餐</button><div className="debug-controls"><span>调试</span><button className={state.clock?.paused ? 'active' : ''} onClick={() => send(issue(state.clock?.paused ? 'RESUME' : 'PAUSE'))}>{state.clock?.paused ? '继续' : '暂停'}</button><button className={state.clock?.speed === 1 ? 'active' : ''} onClick={() => send(issue('SET_SPEED', { speed: 1 }))}>1x</button><button className={state.clock?.speed === 2 ? 'active' : ''} onClick={() => send(issue('SET_SPEED', { speed: 2 }))}>2x</button><button className={state.clock?.speed === 5 ? 'active' : ''} onClick={() => send(issue('SET_SPEED', { speed: 5 }))}>5x</button></div></div><div className="a11y-note"><span>可访问性</span><strong>高对比 · 减少动效</strong></div><span className="sr-only" aria-live="polite">{notice}</span></footer>
       </section>
     </main>
   )
