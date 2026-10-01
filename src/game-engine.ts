@@ -58,6 +58,7 @@ export type Order = {
   baseSeconds: number;
   remaining: number;
   waitingRemaining: number;
+  waitingTotal: number;
   diningRemaining: number;
   wandUses: number;
   stoveId?: string;
@@ -296,7 +297,7 @@ function seatGuests(state: GameState): void {
     const order: Order = {
       id: sequenceId(state, "order"), guestId: guest.id, seatId: seat.id, dishId: selectedDish.id,
       status: "queued", baseSeconds: selectedDish.cookSeconds, remaining: selectedDish.cookSeconds,
-      waitingRemaining: 0, diningRemaining: 0, wandUses: 0,
+      waitingRemaining: 0, waitingTotal: 0, diningRemaining: 0, wandUses: 0,
     };
     guest.orderId = order.id; seat.orderId = order.id;
     runtimeOrders(state).push(order);
@@ -322,7 +323,9 @@ function finishCooking(state: GameState): void {
     order.remaining = stove.remaining;
     if (order.remaining > 0) continue;
     const guest = findGuest(state, order.guestId);
-    order.status = "ready"; order.waitingRemaining = guest?.kind ? (GUESTS.find((item) => item.kind === guest.kind)?.readyWait ?? 10) : 10;
+    order.status = "ready";
+    order.waitingRemaining = guest?.kind ? (GUESTS.find((item) => item.kind === guest.kind)?.readyWait ?? 10) : 10;
+    order.waitingTotal = order.waitingRemaining;
     state.runtime.readyOrders.push(order);
     stove.status = "idle"; stove.orderId = undefined; stove.remaining = 0;
     addLog(state, `${dish(order.dishId)?.name ?? order.dishId} 做好了，等待出餐`, "ready");
@@ -338,10 +341,15 @@ function serveOrder(state: GameState, order: Order): boolean {
   if (order.status !== "ready") return false;
   const index = state.runtime.readyOrders.findIndex((item) => item.id === order.id);
   if (index < 0) return false;
+  const guest = findGuest(state, order.guestId);
+  const seat = state.runtime.seats.find((item) => item.id === order.seatId);
+  // A serving action must resolve the exact order created for the seated guest.
+  // This prevents malformed UI/event payloads from serving a different dish and
+  // still allowing the guest to check out.
+  if (!dish(order.dishId) || !guest || guest.orderId !== order.id || !seat || seat.guestId !== guest.id || seat.orderId !== order.id) return false;
   state.runtime.readyOrders.splice(index, 1);
   order.status = "served"; order.diningRemaining = 1; order.servedAtTick = state.clock.tick;
-  const guest = findGuest(state, order.guestId);
-  if (guest) guest.status = "dining";
+  guest.status = "dining";
   addLog(state, `${dish(order.dishId)?.name ?? "菜品"} 已出餐`, "serve");
   return true;
 }
@@ -497,14 +505,39 @@ function rewardPill(state: GameState): void {
     state.resources.red += GIFT_CONFIG.energyPill.materialAmount; state.resources.green += GIFT_CONFIG.energyPill.materialAmount; state.resources.blue += GIFT_CONFIG.energyPill.materialAmount; addLog(state, "能量药丸保底转换为三色食材各2", "gift"); return;
   }
   const roll = nextRandom(state);
-  if (roll < 0.23) { state.resources.red += 2; addLog(state, "能量药丸获得红色食材×2", "gift"); }
-  else if (roll < 0.46) { state.resources.green += 2; addLog(state, "能量药丸获得绿色食材×2", "gift"); }
-  else if (roll < 0.69) { state.resources.blue += 2; addLog(state, "能量药丸获得蓝色食材×2", "gift"); }
-  else if (roll < 0.81) { state.resources.badges += 1; addLog(state, "能量药丸获得铭牌碎片×1", "gift"); }
-  else if (roll < 0.89) {
-    if (candidates.length) { const item = candidates[Math.floor(nextRandom(state) * candidates.length)]; state.progress.activeDishIds.push(item.id); addLog(state, `能量药丸激活新菜：${item.name}`, "gift"); }
-    else { state.resources.red += 2; state.resources.green += 2; state.resources.blue += 2; addLog(state, "能量药丸无可激活新菜，转换为三色食材各2", "gift"); }
-  } else { state.resources.cash += GIFT_CONFIG.energyPill.cashAmount; addLog(state, `能量药丸获得现金×${GIFT_CONFIG.energyPill.cashAmount}`, "gift"); }
+  let point = roll;
+  const reward = PILL_REWARDS.find((item) => {
+    point -= item.probability;
+    return point < 0;
+  }) ?? PILL_REWARDS[PILL_REWARDS.length - 1];
+  if (reward.id === "dish") {
+    if (candidates.length) {
+      const item = candidates[Math.floor(nextRandom(state) * candidates.length)];
+      state.progress.activeDishIds.push(item.id);
+      addLog(state, `能量药丸激活新菜：${item.name}`, "gift");
+    } else {
+      state.resources.red += GIFT_CONFIG.energyPill.materialAmount;
+      state.resources.green += GIFT_CONFIG.energyPill.materialAmount;
+      state.resources.blue += GIFT_CONFIG.energyPill.materialAmount;
+      addLog(state, "能量药丸无可激活新菜，转换为三色食材各2", "gift");
+    }
+    return;
+  }
+  if (reward.id === "cash") {
+    state.resources.cash += reward.amount ?? GIFT_CONFIG.energyPill.cashAmount;
+    addLog(state, `能量药丸获得现金×${reward.amount ?? GIFT_CONFIG.energyPill.cashAmount}`, "gift");
+    return;
+  }
+  if (reward.id === "badges") {
+    state.resources.badges += reward.amount ?? 1;
+    addLog(state, `能量药丸获得铭牌碎片×${reward.amount ?? 1}`, "gift");
+    return;
+  }
+  if (reward.id === "red" || reward.id === "green" || reward.id === "blue") {
+    state.resources[reward.id] += reward.amount ?? GIFT_CONFIG.energyPill.materialAmount;
+    const label = reward.id === "red" ? "红色" : reward.id === "green" ? "绿色" : "蓝色";
+    addLog(state, `能量药丸获得${label}食材×${reward.amount ?? GIFT_CONFIG.energyPill.materialAmount}`, "gift");
+  }
 }
 function redWand(state: GameState): boolean {
   const stove = state.runtime.stoves.find((item) => item.status === "cooking" && item.orderId);
@@ -560,15 +593,20 @@ export function dispatch(input: GameState, command: Command | string): GameState
       if (speed === 1 || speed === 2 || speed === 5) { state.clock.speed = speed; addLog(state, `时间倍率调整为${speed}倍`, "command"); }
       break;
     }
-    case "RESEARCH": case "RESEARCH_DISH": case "研发": researchDish(state, cmd.dishId ?? String(cmd.value ?? "")); break;
-    case "PUBLISH": case "PUBLISH_DISH": case "上架": {
-      const dishId = cmd.dishId ?? "";
-      if (state.progress.publishedDishIds.includes(dishId)) unpublishDish(state, dishId); else publishDish(state, dishId);
+    case "RESEARCH": case "RESEARCH_DISH": case "研发": {
+      if (!researchDish(state, cmd.dishId ?? String(cmd.value ?? ""))) addLog(state, "研发失败：等级或资源条件不足", "invalid");
       break;
     }
-    case "UNPUBLISH": case "UNPUBLISH_DISH": case "下架": unpublishDish(state, cmd.dishId ?? ""); break;
-    case "UPGRADE_RESTAURANT": case "UPGRADE_RESTAURANT_LEVEL": case "饭馆升级": upgradeRestaurant(state); break;
-    case "UPGRADE_CHEF": case "厨师升级": upgradeChef(state); break;
+    case "PUBLISH": case "PUBLISH_DISH": case "上架": {
+      const dishId = cmd.dishId ?? "";
+      if (state.progress.publishedDishIds.includes(dishId)) {
+        if (!unpublishDish(state, dishId)) addLog(state, "下架失败：菜品不在菜单中", "invalid");
+      } else if (!publishDish(state, dishId)) addLog(state, "上架失败：菜品未研发或菜位已满", "invalid");
+      break;
+    }
+    case "UNPUBLISH": case "UNPUBLISH_DISH": case "下架": if (!unpublishDish(state, cmd.dishId ?? "")) addLog(state, "下架失败：菜品不在菜单中", "invalid"); break;
+    case "UPGRADE_RESTAURANT": case "UPGRADE_RESTAURANT_LEVEL": case "饭馆升级": if (!upgradeRestaurant(state)) addLog(state, "饭馆升级失败：现金或铭牌不足", "invalid"); break;
+    case "UPGRADE_CHEF": case "厨师升级": if (!upgradeChef(state)) addLog(state, "厨师升级失败：饭馆等级或现金不足", "invalid"); break;
     case "GIFT_RED_WAND": case "GIFT_WAND": case "RED_WAND": case "仙女棒": if (!redWand(state)) addLog(state, "没有烹饪中的订单，仙女棒没有消耗", "invalid"); break;
     case "GIFT_PILL": case "ENERGY_PILL": case "PILL": case "能量药丸": rewardPill(state); break;
     case "GIFT_MIRROR": case "MAGIC_MIRROR": case "魔法镜": mirrorGift(state); break;

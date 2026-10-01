@@ -12,6 +12,27 @@ import {
 } from "./game-engine";
 
 describe("game engine core loop", () => {
+  it("keeps the requested dish ID and configured name through cooking and serving", () => {
+    let state = tick(createInitialState({ rng: () => 0 }), 8);
+    const order = state.runtime.readyOrders[0];
+    expect(order?.dishId).toBe("D0101");
+    expect(DISHES.find((item) => item.id === order?.dishId)?.name).toBe("阳春面");
+    expect(state.stats.logs.some((log) => log.message.includes("阳春面"))).toBe(true);
+
+    state = dispatch(state, { type: "SERVE", orderId: order.id });
+    expect(state.stats.logs.some((log) => log.kind === "serve" && log.message.includes("阳春面"))).toBe(true);
+  });
+
+  it("rejects a ready order whose guest or seat link no longer matches", () => {
+    let state = tick(createInitialState({ rng: () => 0 }), 8);
+    const order = state.runtime.readyOrders[0];
+    order.seatId = "seat-999";
+    state = dispatch(state, { type: "SERVE", orderId: order.id });
+    expect(state.runtime.readyOrders).toHaveLength(1);
+    expect(state.runtime.orders[0].status).toBe("ready");
+    expect(state.stats.logs.at(-1)?.kind).toBe("invalid");
+  });
+
   it("moves an arriving guest through cooking, serving and checkout", () => {
     let state = createInitialState({ rng: () => 0 });
     state = tick(state);
