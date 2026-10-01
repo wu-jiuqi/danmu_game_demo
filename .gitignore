@@ -12,3 +12,4 @@ doc_extract.txt
 output/playwright/
 
 .vercel
+~$*.docx
