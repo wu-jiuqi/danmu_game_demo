@@ -2,6 +2,8 @@
 
 这是按照 `docs/百味饭馆_H5实现方案_v1.md` 与本地直播间原型搭建的离线浏览器 Demo。技术栈为 React + TypeScript + Vite，桌面端展示经营舞台，窄屏端会折叠成直播间竖屏流；界面使用 CSS 与 Emoji 占位图完成，不接真实直播平台。
 
+在线演示：[https://danmugamedemo.vercel.app](https://danmugamedemo.vercel.app)
+
 ## 启动
 
 ```bash
