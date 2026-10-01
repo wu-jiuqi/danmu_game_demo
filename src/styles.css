@@ -25,7 +25,7 @@
 
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; min-height: 100%; margin: 0; }
-body { min-width: 1180px; overflow: auto; background: var(--night-900); }
+body { min-width: 320px; overflow-x: hidden; background: var(--night-900); }
 button, input { font: inherit; }
 button { border: 0; cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--cream); outline-offset: 2px; }
@@ -33,7 +33,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cream); out
 .app-shell {
   min-height: 100dvh;
   display: grid;
-  place-items: center;
+  place-items: start center;
   padding: 0;
   overflow: auto;
   background: radial-gradient(circle at 18% 22%, rgba(22, 41, 120, .55), transparent 31rem), radial-gradient(circle at 86% 36%, rgba(244, 93, 159, .12), transparent 20rem), var(--night-900);
@@ -42,14 +42,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cream); out
 .game-frame {
   position: relative;
   display: flex;
-  width: 1440px;
-  min-width: 1440px;
-  height: 900px;
+  width: min(1440px, 100%);
+  min-width: 0;
   min-height: 900px;
   flex: 0 0 auto;
   flex-direction: column;
   gap: 0;
-  padding: 24px;
+  padding: 18px;
   overflow: hidden;
   border-radius: 24px;
   background: var(--night-900);
@@ -58,8 +57,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cream); out
 
 .top-status-bar { display: flex; height: 72px; flex: 0 0 72px; align-items: center; gap: 10px; padding: 10px 24px; border: 2px solid var(--cyan); border-radius: 24px; background: var(--indigo); }
 .brand-lockup { display: flex; min-width: 150px; flex-direction: column; gap: 1px; }
+.live-brand { display: flex; align-items: center; gap: 8px; }
 .brand-lockup strong { color: var(--cream); font-size: 26px; line-height: 1; letter-spacing: -.05em; }
 .brand-lockup span { color: var(--cyan); font-size: 12px; }
+.live-pill { display: inline-flex; height: 20px; align-items: center; padding: 0 8px; border-radius: 999px; color: #fff; background: #ff315c; box-shadow: 0 0 14px rgba(255,49,92,.55); font-family: Inter, sans-serif; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
 .level-badge { display: flex; width: 166px; height: 48px; flex-direction: column; justify-content: center; gap: 2px; padding: 0 14px; border: 1px solid var(--gold); border-radius: 16px; color: var(--gold); background: var(--night-800); text-align: left; }
 .level-badge strong { font-size: 17px; line-height: 1; }
 .level-badge span { color: var(--green); font-size: 11px; }
@@ -77,6 +78,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cream); out
 .panel-surface { position: relative; overflow: hidden; border: 2px solid var(--wood-500); border-radius: 18px; background: var(--night-800); }
 .recipe-panel { padding: 18px 16px; }
 .gift-panel { padding: 18px; border-color: var(--pink); }
+.live-gift-head { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(244,93,159,.35); }
+.live-gift-head strong { color: var(--cream); font-size: 14px; }
+.live-gift-head > span:last-child { margin-left: auto; color: var(--muted); font-size: 10px; }
 .main-stage { padding: 18px; }
 .panel-heading { display: flex; min-height: 52px; align-items: start; justify-content: space-between; }
 .panel-heading h2 { margin: 0; color: var(--cream); font-size: 22px; line-height: 1.2; }
@@ -130,5 +134,43 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cream); out
 
 .chat-feed { position: relative; display: grid; height: 156px; flex: 0 0 156px; grid-template-columns: 220px 1fr 220px; grid-template-rows: 58px 48px 20px; gap: 10px 16px; margin-top: 18px; padding: 14px 16px; border: 2px solid var(--queue); border-radius: 18px; background: var(--night-900); }.feed-title { display: flex; flex-direction: column; gap: 4px; }.feed-title strong { color: var(--cream); font-size: 16px; }.feed-title span { color: var(--muted); font-size: 11px; }.feed-logs { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 12px; grid-column: 2 / span 2; }.log-card { min-width: 0; height: 58px; padding: 7px 12px; border-radius: 12px; background: var(--night-800); }.log-card > div { display: flex; align-items: center; gap: 10px; }.log-card > div span { color: var(--muted); font-family: Inter, sans-serif; font-size: 11px; }.log-card > div strong { padding: 3px 10px; border-radius: 10px; color: var(--night-900); background: var(--queue); font-size: 10px; }.log-card.kind-order > div strong { background: var(--cyan); }.log-card.kind-serve > div strong { background: var(--coral); }.log-card.kind-checkout > div strong { background: var(--green); }.log-card.kind-gift > div strong { background: var(--pink); }.log-card.kind-leave > div strong { background: var(--red); }.log-card p { overflow: hidden; margin: 8px 0 0; color: var(--cream); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.command-bar { display: flex; grid-column: 2; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--cyan); border-radius: 16px; color: var(--muted); background: var(--indigo); font-size: 13px; }.command-bar input { min-width: 100px; flex: 1; border: 0; outline: 0; color: var(--cream); background: transparent; }.command-bar input::placeholder { color: var(--muted); }.command-bar > button { height: 28px; padding: 0 16px; border-radius: 14px; color: var(--night-900); background: var(--gold); font-size: 12px; font-weight: 800; }.debug-controls { display: flex; align-items: center; gap: 4px; padding-left: 6px; border-left: 1px solid rgba(69,199,255,.5); }.debug-controls > span { color: var(--cyan); font-size: 10px; }.debug-controls button { height: 24px; min-width: 26px; padding: 0 6px; border: 1px solid var(--muted); border-radius: 8px; color: var(--cream); background: var(--night-800); font-size: 10px; }.debug-controls button.active { border-color: var(--gold); color: var(--night-900); background: var(--gold); }.a11y-note { display: flex; grid-column: 3; grid-row: 2; flex-direction: column; justify-content: center; padding: 0 12px; border: 1px solid var(--muted); border-radius: 14px; background: var(--night-800); }.a11y-note span { color: var(--muted); font-size: 11px; }.a11y-note strong { margin-top: 4px; color: var(--cream); font-size: 11px; font-weight: 500; }.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
-@media (max-width: 1260px) { .resource-row { grid-template-columns: repeat(7, 100px); }.workspace-grid { grid-template-columns: 248px 832px 280px; } }
+@media (max-width: 1260px) { .resource-row { grid-template-columns: repeat(7, minmax(82px, 1fr)); }.workspace-grid { grid-template-columns: 248px minmax(0, 1fr) 280px; } }
+@media (max-width: 980px) {
+  .game-frame { min-height: 100dvh; padding: 12px; border-radius: 0; }
+  .top-status-bar { height: auto; min-height: 72px; flex-wrap: wrap; padding: 10px 12px; }
+  .brand-lockup { min-width: 180px; flex: 1 1 180px; }
+  .resource-row { flex-basis: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .workspace-grid { height: auto; grid-template-columns: minmax(0, 1fr); }
+  .main-stage { order: 1; min-height: 580px; }
+  .gift-panel { order: 2; }
+  .recipe-panel { order: 3; }
+  .skill-list { grid-template-columns: repeat(2, minmax(0, 1fr)); display: grid; gap: 8px; }
+  .skill-tile { height: 76px; padding: 10px; }
+  .chat-feed { height: auto; min-height: 230px; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; }
+  .feed-logs, .command-bar, .a11y-note { grid-column: 1; }
+  .feed-logs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .command-bar { min-height: 42px; }
+  .a11y-note { grid-row: auto; }
+}
+@media (max-width: 600px) {
+  .game-frame { padding: 8px; gap: 8px; }
+  .top-status-bar { border-radius: 16px; }
+  .brand-lockup strong { font-size: 21px; }
+  .level-badge { width: 128px; }
+  .chef-level { width: 128px; }
+  .resource-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .resource-badge { height: 40px; border-radius: 12px; }
+  .resource-badge small { font-size: 9px; }
+  .resource-badge strong { font-size: 13px; }
+  .main-stage, .gift-panel, .recipe-panel { padding: 12px; }
+  .queue-strip { height: auto; min-height: 110px; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .queue-avatars { min-width: 150px; }
+  .order-bubble { flex-basis: 100%; }
+  .table-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chef-station { height: auto; grid-template-columns: 1fr; }
+  .burner-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skill-list { grid-template-columns: 1fr; }
+  .feed-logs { grid-template-columns: 1fr; }
+  .debug-controls { flex-wrap: wrap; }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
