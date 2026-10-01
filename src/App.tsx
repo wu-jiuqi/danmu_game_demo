@@ -31,6 +31,7 @@ function logTime(tick: number | undefined) {
 function App() {
   const [state, setState] = useState<AnyState>(() => safeInitial())
   const [command, setCommand] = useState('')
+  const [upgradeModal, setUpgradeModal] = useState<'restaurant' | 'chef' | null>(null)
   const [notice, setNotice] = useState('状态变化会被记录，不绕过规则。')
   const noticeTimer = useRef<number | undefined>(undefined)
 
@@ -60,6 +61,15 @@ function App() {
       localStorage.setItem(SAVE_KEY, value)
     } catch { /* localStorage is an enhancement */ }
   }, [state])
+
+  useEffect(() => {
+    if (!upgradeModal) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setUpgradeModal(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [upgradeModal])
 
   const resources = state.resources || {}
   const progress = state.progress || {}
@@ -126,14 +136,19 @@ function App() {
   const nextChef = availableUpgrade?.chef
   const upgradeRestaurantConfig = nextRestaurant ? api.RESTAURANTS?.[nextRestaurant.level - 1] : undefined
   const upgradeChefConfig = nextChef ? api.CHEFS?.[nextChef.level - 1] : undefined
+  const currentRestaurantLevel = progress.restaurantLevel ?? 1
+  const currentChefLevel = progress.chefLevel ?? 1
+  const currentChefConfig = api.CHEFS?.[currentChefLevel - 1]
+  const currentRestaurantConfig = api.RESTAURANTS?.[currentRestaurantLevel - 1]
 
-  const upgradeSummary = (kind: 'restaurant' | 'chef', info: any, config: any) => {
-    if (!info || !config) return `${kind === 'restaurant' ? '饭馆' : '厨师'}已满级`
-    const resourceLabel = (key: string) => key === 'cash' ? '现金' : key === 'badges' ? '铭牌' : key === 'red' ? '红食材' : key === 'green' ? '绿食材' : key === 'blue' ? '蓝食材' : key
-    const cost = Object.entries(info.cost || {}).map(([key, value]) => `${resourceLabel(key)}${value}`).join(' · ')
-    const gap = Object.entries(info.cost || {}).map(([key, value]) => [resourceLabel(key), Math.max(0, Number(value) - Number(resources[key] || 0))] as const).filter(([, value]) => value > 0).map(([key, value]) => `${key}${value}`).join('、')
-    const effect = kind === 'restaurant' ? `桌位 ${config.seats} · 排队 ${config.queue} · 灶眼 ${config.stoves} · 菜位 ${config.dishSlots}` : `烹饪速度 ×${config.speed} · 可用 ${config.maxTier} 级菜`
-    return `${cost || '无消耗'} · ${info.requirement} · ${effect}${gap ? ` · 还差 ${gap}` : info.affordable ? ' · 可升级' : ''}`
+  const handleUpgrade = (kind: 'restaurant' | 'chef') => {
+    const commandType = kind === 'restaurant' ? 'UPGRADE_RESTAURANT' : 'UPGRADE_CHEF'
+    const beforeLevel = kind === 'restaurant' ? currentRestaurantLevel : currentChefLevel
+    const next = api.dispatch(state, issue(commandType))
+    const afterLevel = kind === 'restaurant' ? next.progress?.restaurantLevel : next.progress?.chefLevel
+    const upgraded = afterLevel > beforeLevel
+    apply(next, upgraded ? `${kind === 'restaurant' ? '饭馆' : '厨师'}已升级到 Lv.${afterLevel}` : `${kind === 'restaurant' ? '饭馆' : '厨师'}升级条件还未满足。`, true)
+    if (upgraded) setUpgradeModal(null)
   }
 
   const handleInput = (value: string) => {
@@ -158,13 +173,13 @@ function App() {
       <section className="game-frame" aria-label="百味饭馆 24 小时经营 Demo">
         <header className="top-status-bar">
           <div className="brand-lockup"><div className="live-brand"><span className="live-pill">LIVE</span><strong>百味饭馆</strong></div><span>24H 夜市经营 · 观众互动中</span></div>
-          <button className="level-badge restaurant-level" onClick={() => send(issue('UPGRADE_RESTAURANT'), '饭馆升级条件还未满足。')}><strong>饭馆 Lv.{progress.restaurantLevel ?? 1}</strong><span>{availableUpgrade?.restaurant?.affordable ? '可升级' : '稳定经营'}</span></button>
-          <button className="level-badge chef-level" onClick={() => send(issue('UPGRADE_CHEF'), '厨师升级条件还未满足。')}><strong>厨师 Lv.{progress.chefLevel ?? 1}</strong><span>炉火稳定</span></button>
+          <button className="level-badge restaurant-level" onClick={() => setUpgradeModal('restaurant')} aria-label="打开饭馆升级详情"><strong>饭馆 Lv.{progress.restaurantLevel ?? 1}</strong><span>{availableUpgrade?.restaurant ? (availableUpgrade.restaurant.affordable ? '查看 · 可升级' : '查看升级条件') : '已满级'}</span></button>
+          <button className="level-badge chef-level" onClick={() => setUpgradeModal('chef')} aria-label="打开厨师升级详情"><strong>厨师 Lv.{progress.chefLevel ?? 1}</strong><span>{availableUpgrade?.chef ? (availableUpgrade.chef.affordable ? '查看 · 可升级' : '查看升级条件') : '已满级'}</span></button>
           <div className="resource-row"><ResourceBadge label="现金" value={resources.cash ?? 0} icon="$" tone="gold" /><ResourceBadge label="红食材" value={resources.red ?? 0} icon="R" tone="red" /><ResourceBadge label="绿食材" value={resources.green ?? 0} icon="G" tone="green" /><ResourceBadge label="蓝食材" value={resources.blue ?? 0} icon="B" tone="cyan" /><ResourceBadge label="铭牌碎片" value={resources.badges ?? 0} icon="✦" tone="violet" /><ResourceBadge label="今日客流" value={stats.todayGuests ?? 0} icon="♥" tone="pink" /><ResourceBadge label="营业额" value={`¥${stats.todayRevenue ?? 0}`} icon="↗" tone="cream" /></div>
         </header>
 
         <div className="workspace-grid">
-          <aside className="recipe-panel panel-surface"><PanelHeading title="菜单与升级" subtitle={`${recipeRows.length} 道菜 · 研发 / 上架 / 锁定`} /><div className="recipe-list">{recipeRows.map((recipe: any) => <RecipeStateCard key={recipe.id} recipe={recipe} onAction={(commandType: string) => send(issue(commandType, { dishId: recipe.id }), recipe.action === '上架' ? '已端上菜单。' : '已更新菜单状态。')} />)}</div><div className="upgrade-summary"><strong>升级信息</strong><span>饭馆 Lv.{nextRestaurant?.level ?? 'MAX'} · {upgradeSummary('restaurant', nextRestaurant, upgradeRestaurantConfig)}</span><span>厨师 Lv.{nextChef?.level ?? 'MAX'} · {upgradeSummary('chef', nextChef, upgradeChefConfig)}</span></div></aside>
+          <aside className="recipe-panel panel-surface"><PanelHeading title="菜单与升级" subtitle={`${recipeRows.length} 道菜 · 研发 / 上架 / 锁定`} /><div className="recipe-list">{recipeRows.map((recipe: any) => <RecipeStateCard key={recipe.id} recipe={recipe} onAction={(commandType: string) => send(issue(commandType, { dishId: recipe.id }), recipe.action === '上架' ? '已端上菜单。' : '已更新菜单状态。')} />)}</div><div className="upgrade-summary"><div className="upgrade-summary-head"><strong>升级中心</strong><span>点击查看详情</span></div><UpgradeMiniCard kind="restaurant" currentLevel={currentRestaurantLevel} next={nextRestaurant} config={upgradeRestaurantConfig} onClick={() => setUpgradeModal('restaurant')} /><UpgradeMiniCard kind="chef" currentLevel={currentChefLevel} next={nextChef} config={upgradeChefConfig} onClick={() => setUpgradeModal('chef')} /></div></aside>
 
           <section className="main-stage panel-surface">
             <PanelHeading title="经营舞台" subtitle={`夜市 23:48 · Tick ${state.clock?.paused ? '暂停' : '进行中'}`} action={<span className="stage-chip">主舞台可见</span>} />
@@ -181,6 +196,7 @@ function App() {
         </div>
 
         <footer className="chat-feed"><div className="feed-title"><strong>弹幕日志</strong><span>状态变化会被记录，不绕过规则</span></div><div className="feed-logs">{displayLogs.map((log: any, index: number) => <LogCard key={`${log.id || log.tick}-${index}`} log={log} />)}</div><div className="command-bar"><input aria-label="模拟出餐指令" placeholder="输入框（原型占位）：出餐 / 排1 / 暂停" value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleInput(command) }} /><button onClick={() => command.trim() ? handleInput(command) : send(issue('SERVE'), '当前没有可以出餐的菜。')}>模拟出餐</button><div className="debug-controls"><span>调试</span><button className={state.clock?.paused ? 'active' : ''} onClick={() => send(issue(state.clock?.paused ? 'RESUME' : 'PAUSE'))}>{state.clock?.paused ? '继续' : '暂停'}</button><button className={state.clock?.speed === 1 ? 'active' : ''} onClick={() => send(issue('SET_SPEED', { speed: 1 }))}>1x</button><button className={state.clock?.speed === 2 ? 'active' : ''} onClick={() => send(issue('SET_SPEED', { speed: 2 }))}>2x</button><button className={state.clock?.speed === 5 ? 'active' : ''} onClick={() => send(issue('SET_SPEED', { speed: 5 }))}>5x</button></div></div><div className="a11y-note"><span>可访问性</span><strong>高对比 · 减少动效</strong></div><span className="sr-only" aria-live="polite">{notice}</span></footer>
+        {upgradeModal && <UpgradeModal kind={upgradeModal} currentLevel={upgradeModal === 'restaurant' ? currentRestaurantLevel : currentChefLevel} currentConfig={upgradeModal === 'restaurant' ? currentRestaurantConfig : currentChefConfig} next={upgradeModal === 'restaurant' ? nextRestaurant : nextChef} nextConfig={upgradeModal === 'restaurant' ? upgradeRestaurantConfig : upgradeChefConfig} resources={resources} restaurantLevel={currentRestaurantLevel} onUpgrade={() => handleUpgrade(upgradeModal)} onClose={() => setUpgradeModal(null)} />}
       </section>
     </main>
   )
@@ -188,6 +204,33 @@ function App() {
 
 function ResourceBadge({ label, value, icon, tone }: { label: string; value: string | number; icon: string; tone: string }) { return <div className={`resource-badge tone-${tone}`}><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></div> }
 function PanelHeading({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) { return <div className="panel-heading"><div><h2>{title}</h2><span>{subtitle}</span></div>{action}</div> }
+const levelNames = { restaurant: ['折叠面摊', '家常小饭馆', '热闹小酒楼'], chef: ['学徒帮厨', '家常厨师', '掌勺厨师'] } as const
+const resourceLabels: Record<string, string> = { cash: '现金', badges: '铭牌碎片', red: '红食材', green: '绿食材', blue: '蓝食材' }
+
+function UpgradeMiniCard({ kind, currentLevel, next, config, onClick }: { kind: 'restaurant' | 'chef'; currentLevel: number; next: any; config: any; onClick: () => void }) {
+  const isMax = !next || !config
+  const effect = kind === 'restaurant' ? (isMax ? '容量已达上限' : `桌位 ${config.seats} · 灶眼 ${config.stoves}`) : (isMax ? '效率已达上限' : `速度 ×${config.speed} · 可做 Lv.${config.maxTier}`)
+  const cost = next?.cost ? Object.entries(next.cost).map(([key, value]) => `${resourceLabels[key] || key} ${value}`).join(' · ') : '无需继续升级'
+  return <button className={`upgrade-mini-card ${kind === 'chef' ? 'is-chef' : ''} ${isMax ? 'is-max' : ''}`} onClick={onClick}><span className="upgrade-mini-icon">{kind === 'restaurant' ? '馆' : '厨'}</span><span className="upgrade-mini-copy"><strong>{kind === 'restaurant' ? '饭馆' : '厨师'} Lv.{currentLevel}{isMax ? ' · MAX' : ` → Lv.${next.level}`}</strong><small>{isMax ? effect : `${cost} · ${effect}`}</small></span><b>{isMax ? '查看' : '详情'}</b></button>
+}
+
+function UpgradeModal({ kind, currentLevel, currentConfig, next, nextConfig, resources, restaurantLevel, onUpgrade, onClose }: { kind: 'restaurant' | 'chef'; currentLevel: number; currentConfig: any; next: any; nextConfig: any; resources: AnyState; restaurantLevel: number; onUpgrade: () => void; onClose: () => void }) {
+  const isMax = !next || !nextConfig
+  const currentName = levelNames[kind][Math.max(0, currentLevel - 1)]
+  const nextName = next ? levelNames[kind][Math.max(0, next.level - 1)] : '已达最高等级'
+  const costs = Object.entries(next?.cost || {}) as [string, number][]
+  const missingResources = costs.filter(([key, value]) => Number(resources[key] || 0) < Number(value))
+  const missingRestaurant = kind === 'chef' && Boolean(nextConfig?.restaurant) && restaurantLevel < Number(nextConfig.restaurant)
+  const blockers = [
+    ...missingResources.map(([key, value]) => `还差${resourceLabels[key] || key}${Number(value) - Number(resources[key] || 0)}`),
+    ...(missingRestaurant ? [`需要饭馆 Lv.${nextConfig.restaurant}`] : []),
+  ]
+  const canUpgrade = Boolean(next && next.affordable && !missingRestaurant)
+  const metricRows = kind === 'restaurant'
+    ? [['桌位', currentConfig?.seats, nextConfig?.seats], ['排队位', currentConfig?.queue, nextConfig?.queue], ['灶眼', currentConfig?.stoves, nextConfig?.stoves], ['菜位', currentConfig?.dishSlots, nextConfig?.dishSlots], ['客流 / 分钟', currentConfig?.guestsPerMinute, nextConfig?.guestsPerMinute]]
+    : [['烹饪速度', currentConfig?.speed ? `×${currentConfig.speed.toFixed(2)}` : '—', nextConfig?.speed ? `×${nextConfig.speed.toFixed(2)}` : '—'], ['可做菜品', currentConfig?.maxTier ? `Lv.${currentConfig.maxTier}` : '—', nextConfig?.maxTier ? `Lv.${nextConfig.maxTier}` : '—']]
+  return <div className="upgrade-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className={`upgrade-modal ${kind === 'chef' ? 'is-chef' : ''}`} role="dialog" aria-modal="true" aria-labelledby="upgrade-modal-title"><header className="upgrade-modal-header"><div><span className="upgrade-kicker">成长路线 · {kind === 'restaurant' ? '经营空间' : '厨房效率'}</span><h2 id="upgrade-modal-title">{kind === 'restaurant' ? '饭馆升级' : '厨师升级'}</h2><p>{currentName} <span>→</span> {nextName}</p></div><button className="upgrade-modal-close" onClick={onClose} aria-label="关闭升级详情">×</button></header>{isMax ? <div className="upgrade-max-state"><strong>已达到 Lv.3 最高等级</strong><span>{kind === 'restaurant' ? '桌位、排队位、灶眼和菜位都已开放到当前 Demo 上限。' : '已可制作全部 3 级菜，烹饪速度达到 ×1.50。'}</span></div> : <><div className="upgrade-cost-row"><strong>升级消耗</strong><div className="upgrade-costs">{costs.length ? costs.map(([key, value]) => <span key={key} className={Number(resources[key] || 0) >= Number(value) ? 'is-ready' : 'is-missing'}><b>{resourceLabels[key] || key}</b><em>{resources[key] || 0} / {value}</em></span>) : <span className="is-ready"><b>免费</b><em>无需消耗</em></span>}</div></div><div className="upgrade-metrics"><div className="upgrade-metrics-head"><strong>升级后变化</strong><span>当前 → 下一级</span></div>{metricRows.map(([label, before, after]) => <div className="upgrade-metric" key={String(label)}><span>{label}</span><strong>{String(before ?? '—')} <b>→</b> {String(after ?? '—')}</strong></div>)}</div><div className={`upgrade-requirement ${canUpgrade ? 'is-ready' : 'is-blocked'}`}><span>{canUpgrade ? '✓' : '!'}</span><div><strong>{canUpgrade ? '升级条件已满足' : blockers.length ? blockers.join(' · ') : next.requirement}</strong><small>{canUpgrade ? '升级后会立即同步到经营舞台和菜单解锁。' : '补齐条件后再回来升级，规则由状态机统一校验。'}</small></div></div><button className="upgrade-primary" disabled={!canUpgrade} onClick={onUpgrade}>{canUpgrade ? `升级到 Lv.${next.level}` : '条件未满足'}</button></>}</section></div>
+}
 function RecipeStateCard({ recipe, onAction }: { recipe: any; onAction: (commandType: string) => void }) { const commandType = recipe.active ? (recipe.published ? 'UNPUBLISH_DISH' : 'PUBLISH_DISH') : 'RESEARCH_DISH'; const disabled = recipe.locked; return <article className={`recipe-card ${recipe.locked ? 'is-locked' : ''} tone-${recipe.locked ? 'muted' : recipe.published ? 'green' : 'warning'}`}><span className="state-dot" /><strong>{recipe.name}</strong><span className="recipe-status">{recipe.status}</span><small>{recipe.subtitle}</small><button disabled={disabled} onClick={() => onAction(commandType)}>{recipe.locked && recipe.active ? '需升级' : recipe.action}</button></article> }
 function QueueAvatar({ guest, index }: { guest: any; index: number }) { return <div className={`queue-avatar avatar-${index}`}><strong>{(guest.name || '客').slice(0, 1)}</strong><span>{guest.name || `客人 ${index + 1}`}</span></div> }
 function TableCard({ seat, guest, order, index, dishName }: { seat: any; guest: any; order: any; index: number; dishName: (id?: string) => string }) { const occupied = seat.status === 'occupied'; const status = !occupied ? '空闲' : order?.status === 'queued' ? '等待上灶' : order?.status === 'cooking' ? '烹饪中' : order?.status === 'ready' ? '等待出餐' : order?.status === 'served' ? '用餐中' : '处理中'; const tone = !occupied ? 'muted' : order?.status === 'ready' ? 'coral' : order?.status === 'cooking' ? 'orange' : 'green'; const progress = order?.status === 'ready' ? 1 - ((order.waitingRemaining || 0) / Math.max(1, order.waitingTotal || 10)) : order?.status === 'cooking' ? Math.max(0.08, Math.min(1, 1 - ((order.remaining || 0) / Math.max(1, order.baseSeconds || 1)))) : order?.status === 'served' ? 0.9 : occupied ? 0.2 : 0.28; const dishLabel = order ? dishName(order.dishId) : occupied ? '等待点单' : '等待下一位'; return <article className={`table-card tone-${tone} ${occupied ? 'occupied' : ''}`}><div className="table-avatar">{occupied ? (guest?.name || '客').slice(0, 1) : '空'}</div><div><strong>{occupied ? (guest?.name || '客人') : '空桌'}</strong><span>{status}</span><small>{order?.status === 'ready' ? `${dishLabel} · 请出餐 ${secondsLabel(order.waitingRemaining)}` : order?.status === 'cooking' ? `${dishLabel} · ${secondsLabel(order.remaining)}` : dishLabel}</small></div><ProgressBar value={progress} tone={tone} /></article> }
